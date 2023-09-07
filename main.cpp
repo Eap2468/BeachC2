@@ -43,7 +43,7 @@ void help()
     \n\
     Commands:\n\
         sessions: lists available sessions\n\
-        use: opens to the session listed [usage: use <session number>]\n\
+        use: opens to the session listed [usage: use <session number> and press ctrl-c to go back the the menu]\n\
         exit: safely closes the server\n\
         help: shows this menu\n\
     ";
