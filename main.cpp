@@ -5,10 +5,12 @@
 #include <arpa/inet.h>
 #include <poll.h>
 #include <string>
+#include <cstring>
 #include <sstream>
 #include <vector>
 #include <map>
 #include <thread>
+#include <signal.h>
 
 #define BUFFERSIZE 1024
 #define POLL_STDIN 0
