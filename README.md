@@ -4,7 +4,7 @@ C2 server for practice labs and boxes, helps with managing your sea shells all i
 # Usage
 g++ main.cpp -o BeachC2
 
-./BeachC2 <PORT>
+./BeachC2 [PORT]
 
 # Commands
 sessions: lists available sessions
