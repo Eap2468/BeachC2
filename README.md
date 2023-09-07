@@ -8,7 +8,7 @@ g++ main.cpp -o BeachC2
 # Commands
 sessions: lists available sessions
 
-use: opens to the session listed (usage: use [SESSION NUMBER])
+use: opens to the session listed (usage: use [SESSION NUMBER] and press ctrl-c to go back the menu)
 
 exit: safely closes the server
 
