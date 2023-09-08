@@ -2,35 +2,101 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include <arpa/inet.h>
-#include <poll.h>
 #include <string>
 #include <cstring>
 #include <sstream>
-#include <vector>
 #include <map>
+#include <vector>
 #include <thread>
+#include <arpa/inet.h>
+#include <poll.h>
 #include <signal.h>
 
 #define BUFFERSIZE 1024
-#define POLL_STDIN 0
-#define POLL_NETOUT 1
-#define POLL_NETIN 2
-#define POLL_STDOUT 3
 
-bool shellGoing;
+#define STDIN 0
+#define NETOUT 1
+#define NETIN 2
+#define STDOUT 3
 
-struct IOFDS {
+#define DEBUG 1
+
+bool going = false;
+
+struct IO
+{
     int stdin_fd;
     int stdout_fd;
     int stderr_fd;
 };
 
-void signal_handler(int code)
+void successMsg(std::string msg)
 {
-    if(code == 2)
+    std::cout << "[+] " << msg << std::endl;
+}
+
+void errorMsg(std::string msg)
+{
+    std::cout << "[-] " << msg << std::endl;
+}
+
+void infoMsg(std::string msg)
+{
+    std::cout << "[*] " << msg << std::endl;
+}
+
+void debugMsg(std::string msg)
+{
+    std::cout << "DEBUG: " << msg << std::endl;
+}
+
+void prompt()
+{
+    std::cout << "BEACHC2> ";
+}
+
+void split(std::vector<std::string> *args, std::string str)
+{
+    std::stringstream ss(str);
+
+    while(getline(ss, str, ' '))
     {
-        shellGoing = false;
+        args->push_back(str);
+    }
+}
+
+void StartServer(std::map<int, std::string> *sessions, int *serverfd)
+{
+    int clientfd;
+    sockaddr_in clientAddr;
+    socklen_t clientAddrSize = sizeof(clientAddr);
+    std::string ip;
+
+    while(true)
+    {
+        clientfd = accept(*serverfd, (sockaddr*)&clientAddr, &clientAddrSize);
+        
+        ip = inet_ntoa(clientAddr.sin_addr);
+        infoMsg("Connection from " + ip);
+
+        sessions->insert(std::pair<int, std::string>(clientfd, ip));
+    }
+}
+
+void help()
+{
+    
+}
+
+void signal_shell_handler(int code)
+{
+    if (DEBUG)
+    {
+        debugMsg("signal code " + std::to_string(code));
+    }
+    if (code == 2)
+    {
+        going = false;
     }
     else
     {
@@ -38,256 +104,186 @@ void signal_handler(int code)
     }
 }
 
-void help()
+ssize_t fillBuffer(int fd, unsigned char* buffer, size_t *bufferPos)
 {
-    std::string message = "\n\
-    BEACHC2\n\
-    \n\
-    Commands:\n\
-        sessions: lists available sessions\n\
-        use: opens to the session listed [usage: use <session number> and press ctrl-c to go back the the menu]\n\
-        exit: safely closes the server\n\
-        help: shows this menu\n\
-    ";
-    
-    std::cout << message << std::endl;
-}
+    ssize_t bufferSize = BUFFERSIZE - *bufferPos;
+    ssize_t bytes_read = read(fd, buffer + *bufferPos, bufferSize);
 
-void split(std::vector<std::string> *args, std::string str)
-{
-    std::stringstream ss(str);
-    
-    while(getline(ss, str, ' '))
+    if (bytes_read <= 0)
     {
-        args->push_back(str);
+        return -1;
     }
-}
 
-void plusMsg(std::string msg)
-{
-    std::cout << std::endl << "[+] " << msg << std::endl;
-}
-
-void errorMsg(std::string msg)
-{
-    std::cout << std::endl << "[-] " << msg << std::endl;
-}
-
-void infoMsg(std::string msg)
-{
-    std::cout << std::endl << "[*] " << msg << std::endl;
-}
-
-void debug(std::string msg)
-{
-    std::cout << "DEBUG: " << msg << std::endl;
-}
-
-void prompt()
-{
-    std::cout << "BEACHC2>";
-}
-
-void StartServer(std::map<int, std::string> *sessions, int *serverfd, int port, bool *running)
-{
-    *serverfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    sockaddr_in serverAddr, clientAddr;
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(port);
-    serverAddr.sin_addr.s_addr = inet_addr("0.0.0.0");
-    
-    int enable = 1;
-    setsockopt(*serverfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable));
-    
-    bind(*serverfd, (sockaddr*)&serverAddr, sizeof(serverAddr));
-    listen(*serverfd, 5);
-    infoMsg("Server started on 0.0.0.0:" + std::to_string(port));
-    prompt();
-    
-    socklen_t clientAddrSize = sizeof(clientAddr);
-    
-    while(*running)
-    {
-        int clientfd = accept(*serverfd, (sockaddr*)&clientAddr, &clientAddrSize);
-        char *ip = inet_ntoa(clientAddr.sin_addr);
-        infoMsg("Connection from " + (std::string)ip);
-        prompt();
-        
-        sessions->insert(std::pair<int, std::string>(clientfd, (std::string)ip));
-    }
-}
-
-ssize_t fillBuff(int sockfd, char *buffer, size_t *pos)
-{
-    size_t bufferSize = BUFFERSIZE - *pos;
-    ssize_t bytes_read = read(sockfd, buffer + *pos, bufferSize);
-
-    if(bytes_read <= 0)
-    {
-        return bytes_read;
-    }
-    
-    *pos += bytes_read;
+    *bufferPos += bytes_read;
     return bytes_read;
 }
 
-ssize_t drainBuff(int sockfd, char *buffer, size_t *pos)
+ssize_t drainBuffer(int fd, unsigned char* buffer, size_t *bufferPos)
 {
-    ssize_t bytes_sent = write(sockfd, buffer, *pos);
-    
+    ssize_t bytes_sent = write(fd, buffer, *bufferPos);
+
     if(bytes_sent <= 0)
     {
-        return bytes_sent;
+        return -1;
     }
-    
-    *pos -= bytes_sent;
-    memmove(buffer, buffer + bytes_sent, *pos);
+
+    *bufferPos -= bytes_sent;
+    if(*bufferPos > 0)
+    {
+        memmove(buffer, buffer + bytes_sent, *bufferPos);
+    }
 
     return bytes_sent;
 }
 
-void shellClose(bool *going)
+int shell(int clientfd, IO io)
 {
-    *going = false;
-}
+    going = true;
 
-int shell(int clientfd, IOFDS io)
-{
-    shellGoing = true;
-    signal(SIGINT, signal_handler);
-    
-    char stdInBuff[BUFFERSIZE];
-    size_t stdInPos = 0;
-    
-    char stdOutBuff[BUFFERSIZE];
-    size_t stdOutPos = 0;
-    
+    unsigned char stdinBuff[BUFFERSIZE];
+    size_t stdinPos = 0;
+
+    unsigned char netinBuff[BUFFERSIZE];
+    size_t netinPos = 0;
+
     struct pollfd fds[4];
-    
-    fds[POLL_STDIN].fd = io.stdin_fd;
-    fds[POLL_STDIN].events = POLLIN;
-    
-    fds[POLL_NETOUT].fd = clientfd;
-    fds[POLL_NETOUT].events = 0;
-    
-    fds[POLL_NETIN].fd = clientfd;
-    fds[POLL_NETOUT].events = POLLIN;
-    
-    fds[POLL_STDOUT].fd = io.stdout_fd;
-    fds[POLL_STDOUT].events = 0;
-    
-    
-    int returnCode = 0;
-    ssize_t code = 0;
-    while(shellGoing)
+
+    fds[STDIN].fd = io.stdin_fd;
+    fds[NETOUT].fd = clientfd;
+    fds[NETIN].fd = clientfd;
+    fds[STDOUT].fd = io.stdout_fd;
+
+    fds[STDIN].events = POLLIN;
+    fds[NETOUT].events = 0;
+    fds[NETIN].events = POLLIN;
+    fds[STDOUT].events = 0;
+
+    signal(SIGINT, signal_shell_handler);
+
+    int pollCode, code;
+    while(going)
     {
-        poll(fds, 4, 10);
-        
-        if(fds[POLL_STDIN].revents & POLLIN && stdInPos < BUFFERSIZE)
+        pollCode == poll(fds, 4, 10);
+        if(pollCode == -1)
         {
-            code = fillBuff(fds[POLL_STDIN].fd, stdInBuff, &stdInPos);
-            
-            if(code == -1)
+            errorMsg("Poll error");
+            return 1;
+        }
+        if(fds[STDIN].fd == -1 || fds[NETOUT].fd == -1 || fds[NETIN].fd == -1 || fds[STDOUT].fd == -1)
+        {
+            errorMsg("Connection error");
+            return 2;
+        }
+
+        if(fds[STDIN].revents & POLLIN && stdinPos < BUFFERSIZE)
+        {
+            int code = fillBuffer(fds[STDIN].fd, stdinBuff, &stdinPos);
+            if (DEBUG)
             {
-                errorMsg("Connection to client lost");
-                returnCode = 1;
-                break;
+                debugMsg("STDIN code " + std::to_string(code));
             }
-            
-            if(stdInPos == BUFFERSIZE)
+            if (code == -1)
             {
-                fds[POLL_STDIN].events = 0;
+                fds[STDIN].fd = -1;
+                continue;
             }
-            if(stdInPos > 0)
+
+            if(stdinPos == BUFFERSIZE)
             {
-                fds[POLL_NETOUT].events = POLLOUT;
+                fds[STDIN].events = 0;
+            }
+            if(stdinPos > 0)
+            {
+                fds[NETOUT].events = POLLOUT;
             }
         }
-        
-        if(fds[POLL_NETOUT].revents & POLLOUT && stdInPos > 0)
+        if(fds[NETOUT].revents & POLLOUT && stdinPos > 0)
         {
-            code = drainBuff(fds[POLL_NETOUT].fd, stdInBuff, &stdInPos);
-            
+            int code = drainBuffer(fds[NETOUT].fd, stdinBuff, &stdinPos);
+            if (DEBUG)
+            {
+                debugMsg("NETOUT code " + std::to_string(code));
+            }
             if(code == -1)
             {
-                errorMsg("Connection to client lost");
-                break;
+                fds[NETOUT].fd == -1;
+                continue;
             }
-            
-            if(stdInPos == 0)
+
+            if(stdinPos == 0)
             {
-                fds[POLL_NETOUT].events = 0;
+                fds[NETOUT].revents = 0;
             }
-            if(stdInPos < BUFFERSIZE)
+            if(stdinPos < BUFFERSIZE)
             {
-                fds[POLL_STDIN].events = POLLIN;
+                fds[STDIN].events = POLLIN;
             }
         }
-        
-        if(fds[POLL_NETIN].revents & POLLIN && stdOutPos < BUFFERSIZE)
+        if(fds[NETIN].revents & POLLIN && netinPos < BUFFERSIZE)
         {
-            code = fillBuff(fds[POLL_NETIN].fd, stdOutBuff, &stdOutPos);
-            
-            if(code == -1)
+            int code = fillBuffer(fds[NETIN].fd, netinBuff, &netinPos);
+            if (DEBUG)
             {
-                errorMsg("Connection to client lost");
-                break;
+                debugMsg("NETIN code " + std::to_string(code));
             }
-            
-            if(stdOutPos == BUFFERSIZE)
+            if (code == -1)
             {
-                fds[POLL_NETIN].events = 0;
+                fds[NETIN].fd = -1;
+                continue;
             }
-            if(stdOutPos > 0)
+
+            if(netinPos == BUFFERSIZE)
             {
-                fds[POLL_STDOUT].events = POLLOUT;
+                fds[NETIN].events = 0;
+            }
+            if(netinPos > 0)
+            {
+                fds[STDOUT].events = POLLOUT;
             }
         }
-        
-        if(fds[POLL_STDOUT].revents & POLLOUT && stdOutPos > 0)
+        if(fds[STDOUT].revents & POLLOUT && netinPos > 0)
         {
-            code = drainBuff(fds[POLL_STDOUT].fd, stdOutBuff, &stdOutPos);
-            
-            if(code == -1)
+            int code = drainBuffer(fds[STDOUT].fd, netinBuff, &netinPos);
+            if (DEBUG)
             {
-                errorMsg("Connection to client lost");
-                break;
+                debugMsg("STDOUT code " + std::to_string(code));
             }
-            
-            if(stdOutPos == 0)
+            if (code == -1)
             {
-                fds[POLL_STDOUT].events = 0;
+                fds[STDOUT].fd = -1;
+                continue;
             }
-            if(stdOutPos < BUFFERSIZE)
+
+            if(netinPos == 0)
             {
-                fds[POLL_NETIN].events = POLLIN;
+                fds[STDOUT].events = 0;
+            }
+            if(netinPos < BUFFERSIZE)
+            {
+                fds[NETIN].events = POLLIN;
             }
         }
     }
-    return returnCode;
+    return 0;
 }
 
 int main(int argc, char* argv[])
 {
-    std::map<int, std::string> sessions;
-    int serverfd = -1;
-    int port = -1;
+    int serverfd = -1, port = 0;
     std::string inputStr = "";
-    
-    bool running = true;
-    
-    struct IOFDS io;
+    std::vector<std::string> inputArgs;
+    std::map<int, std::string> sessions;
+    struct IO io;
     io.stdin_fd = STDIN_FILENO;
     io.stdout_fd = STDOUT_FILENO;
     io.stderr_fd = STDERR_FILENO;
-    
-    if(argc < 2)
+
+    if (argc < 2)
     {
         help();
-        std::cout << std::endl << "Usage: ./BEACHC2 <PORT>" << std::endl;
+        std::cout << "Usage ./BeachC2 <PORT>" << std::endl;
         return 0;
     }
-    
     try
     {
         port = std::stoi(argv[1]);
@@ -295,47 +291,62 @@ int main(int argc, char* argv[])
         {
             throw std::invalid_argument("Invalid port number");
         }
-    } catch (...)
+    } catch(...)
     {
         help();
-        std::cout << std::endl;
-        errorMsg("Please enter a valid port <0-65535>");
+        errorMsg("Please enter a valid port number (1-65535)");
         return 0;
     }
-    
-    std::thread serverThread(StartServer, &sessions, &serverfd, port, &running);
-    
-    int count = -1;
-    std::vector<std::string> args;
-    std::map<int, int> choices;
+
+    serverfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(port);
+    serverAddr.sin_addr.s_addr = inet_addr("0.0.0.0");
+    int enable = 1;
+    if(setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) != 0)
+    {
+        errorMsg("Setsockopt error " + std::to_string(errno));
+        return 0;
+    }
+    if(bind(serverfd, (sockaddr*)&serverAddr, sizeof(serverAddr)) != 0)
+    {
+        errorMsg("Bind error " + std::to_string(errno));
+        return 0;
+    }
+    if(listen(serverfd, 5) != 0)
+    {
+        errorMsg("Listen error " + std::to_string(errno));
+        close(serverfd);
+        return 0;
+    }
+    infoMsg("Server started on 0.0.0.0:" + std::to_string(port));
+
+    std::thread serverThread(StartServer, &sessions, &serverfd);
+
+    int choice = 0, count = 0, code = 0;
     while(true)
     {
-        choices.clear();
-        args.clear();
+        inputArgs.clear();
         prompt();
         std::getline(std::cin, inputStr);
-        if(inputStr.length() == 0) { continue; }
-        split(&args, inputStr);
-        
+        split(&inputArgs, inputStr);
+
+        if(DEBUG)
+        {
+            for(std::string i : inputArgs)
+            {
+                debugMsg(i);
+            }
+        }
+
         if(inputStr == "exit")
         {
-            infoMsg("Closing server...");
-            running = false;
             serverThread.detach();
             break;
         }
-        if(inputStr == "help")
-        {
-            help();
-            continue;
-        }
         if(inputStr == "sessions")
         {
-            if(sessions.size() == 0)
-            {
-                infoMsg("No sesssions available, go out and catch some shells!");
-            }
-                
             count = 0;
             for(auto &i : sessions)
             {
@@ -343,35 +354,44 @@ int main(int argc, char* argv[])
                 count++;
             }
         }
-        if(args[0] == "use")
+        if(inputArgs[0] == "use")
         {
             try
             {
-                count = 0;
-                for(auto &i : sessions)
+                choice = std::stoi(inputArgs[1]);
+                if(choice < 0 || choice > sessions.size() - 1)
                 {
-                    choices.insert(std::pair<int, int>(count, i.first));
-                    count++;
+                    throw std::invalid_argument("Invalid session number");
                 }
-                
-                int shellReturnCode = shell(choices[std::stoi(args[1])], io);
-                
-                if(shellReturnCode == 1)
-                {
-                    infoMsg("Client remove functionality will be added in a future version!");
-                }
-            } catch (...)
+            } catch(...)
             {
-                errorMsg("Invalid session number");
+                errorMsg("Please enter a valid number");
+                continue;
+            }
+
+            count = 0;
+            for(auto &i : sessions)
+            {
+                if(count == choice)
+                {
+                    code = shell(i.first, io);
+                    if(code == 2)
+                    {
+                        sessions.erase(i.first);
+                        break;
+                    }
+                }
+                count++;
             }
         }
+
     }
-    
+
     for(auto &i : sessions)
     {
         close(i.first);
     }
     close(serverfd);
-    std::cout << "Thank you for using BEACHC2!" << std::endl;
+    std::cout << "Thank you for using BeachC2!" << std::endl;
     return 0;
 }
