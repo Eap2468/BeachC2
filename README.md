@@ -11,6 +11,8 @@ sessions: lists available sessions
 
 use: opens to the session listed (usage: use [SESSION NUMBER] and press ctrl-c to go back the menu)
 
+kill: kills the given session number (usage: kill [SESSION NUMBER])
+
 exit: safely closes the server
 
 help: shows the help menu
