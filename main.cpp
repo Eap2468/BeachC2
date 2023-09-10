@@ -358,6 +358,10 @@ int main(int argc, char* argv[])
         {
             try
             {
+                if(inputArgs.size() < 2)
+                {
+                    throw std::invalid_argument("No session number given");
+                }
                 choice = std::stoi(inputArgs[1]);
                 if(choice < 0 || choice > sessions.size() - 1)
                 {
@@ -365,7 +369,7 @@ int main(int argc, char* argv[])
                 }
             } catch(...)
             {
-                errorMsg("Please enter a valid number");
+                errorMsg("Please enter a valid session number");
                 continue;
             }
 
@@ -380,6 +384,41 @@ int main(int argc, char* argv[])
                         sessions.erase(i.first);
                         break;
                     }
+                }
+                count++;
+            }
+        }
+        if(inputArgs[0] == "kill")
+        {
+            try
+            {
+                if(inputArgs.size() < 2)
+                {
+                    throw std::invalid_argument("No session number given");
+                }
+
+                choice = std::stoi(inputArgs[1]);
+                if (choice < 0 || choice > sessions.size())
+                {
+                    throw std::invalid_argument("Invalid session number");
+                }
+
+            } catch(...)
+            {
+                errorMsg("Please enter a valid session number");
+                continue;
+            }
+
+            count = 0;
+            for(auto &i : sessions)
+            {
+                if(count == choice)
+                {
+                    infoMsg("Killing connection");
+                    close(i.first);
+                    sessions.erase(i.first);
+                    infoMsg("Connection killed");
+                    break;
                 }
                 count++;
             }
