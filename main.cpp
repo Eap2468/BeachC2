@@ -22,6 +22,7 @@
 #define DEBUG 0
 
 bool going = false;
+bool serverListen = true;
 
 struct IO
 {
@@ -65,22 +66,63 @@ void split(std::vector<std::string> *args, std::string str)
     }
 }
 
+bool ServerSetup(int *serverfd, int port)
+{
+    sockaddr_in serverAddr;
+    *serverfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(port);
+    serverAddr.sin_addr.s_addr = inet_addr("0.0.0.0");
+    int enable = 1;
+    if(setsockopt(*serverfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) != 0
+    || setsockopt(*serverfd, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int)) != 0)
+    {
+        errorMsg("Setsockopt error " + std::to_string(errno));
+        return false;
+    }
+    if(bind(*serverfd, (sockaddr*)&serverAddr, sizeof(serverAddr)) != 0)
+    {
+        errorMsg("Bind error " + std::to_string(errno));
+        return false;
+    }
+    if(listen(*serverfd, 5) != 0)
+    {
+        errorMsg("Listen error " + std::to_string(errno));
+        close(*serverfd);
+        return false;
+    }
+
+    infoMsg("Server started on 0.0.0.0:" + std::to_string(port));
+
+    return true;
+}
+
 void StartServer(std::map<int, std::string> *sessions, int *serverfd)
 {
-    int clientfd;
+    int clientfd = -1;
     sockaddr_in clientAddr;
     socklen_t clientAddrSize = sizeof(clientAddr);
+    struct pollfd fds[1];
     std::string ip;
 
-    while(true)
-    {
-        clientfd = accept(*serverfd, (sockaddr*)&clientAddr, &clientAddrSize);
-        
-        ip = inet_ntoa(clientAddr.sin_addr);
-        infoMsg("Connection from " + ip);
+    fds[0].fd = *serverfd;
+    fds[0].events = POLLIN;
 
-        sessions->insert(std::pair<int, std::string>(clientfd, ip));
+    while(serverListen)
+    {
+        poll(fds, 1, 10);
+        if(fds[0].revents & POLLIN)
+        {
+            clientfd = accept(*serverfd, (sockaddr*)&clientAddr, &clientAddrSize);
+            if(clientfd == -1){ break; }
+            
+            ip = inet_ntoa(clientAddr.sin_addr);
+            infoMsg("Connection from " + ip);
+
+            sessions->insert(std::pair<int, std::string>(clientfd, ip));
+        }
     }
+    close(*serverfd);
 }
 
 void help()
@@ -273,6 +315,7 @@ int main(int argc, char* argv[])
     std::string inputStr = "";
     std::vector<std::string> inputArgs;
     std::map<int, std::string> sessions;
+    std::thread serverThread;
     struct IO io;
     io.stdin_fd = STDIN_FILENO;
     io.stdout_fd = STDOUT_FILENO;
@@ -298,31 +341,14 @@ int main(int argc, char* argv[])
         return 0;
     }
 
-    serverfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    sockaddr_in serverAddr;
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(port);
-    serverAddr.sin_addr.s_addr = inet_addr("0.0.0.0");
-    int enable = 1;
-    if(setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) != 0)
+    if(!ServerSetup(&serverfd, port))
     {
-        errorMsg("Setsockopt error " + std::to_string(errno));
-        return 0;
+        errorMsg("Unable to bind to port " + std::to_string(port));
     }
-    if(bind(serverfd, (sockaddr*)&serverAddr, sizeof(serverAddr)) != 0)
+    else
     {
-        errorMsg("Bind error " + std::to_string(errno));
-        return 0;
+        serverThread = std::thread(StartServer, &sessions, &serverfd);
     }
-    if(listen(serverfd, 5) != 0)
-    {
-        errorMsg("Listen error " + std::to_string(errno));
-        close(serverfd);
-        return 0;
-    }
-    infoMsg("Server started on 0.0.0.0:" + std::to_string(port));
-
-    std::thread serverThread(StartServer, &sessions, &serverfd);
 
     int choice = 0, count = 0, code = 0;
     while(true)
@@ -353,6 +379,44 @@ int main(int argc, char* argv[])
                 std::cout << count << ") " << i.second << std::endl;
                 count++;
             }
+        }
+        if(inputArgs[0] == "listen")
+        {
+            if (inputArgs.size() < 2)
+            {
+                errorMsg("Please enter a valid port number");
+                continue;
+            }
+
+            infoMsg("Attempting to restart server on port " + inputArgs[1]);
+
+            try
+            {
+                port = std::stoi(inputArgs[1]);
+                if(port < 1 || port > 65535)
+                {
+                    throw std::invalid_argument("Invalid port number");
+                }
+            }catch(...)
+            {
+                errorMsg("Please enter a valid port number");
+                continue;
+            }
+
+            serverListen = false;
+            try
+            {
+                serverThread.join();
+            }catch(...){}
+
+            if(!ServerSetup(&serverfd, port))
+            {
+                errorMsg("Unable to bind to port " + std::to_string(port));
+                continue;
+            }
+            serverListen = true;
+
+            serverThread = std::thread(StartServer, &sessions, &serverfd);
         }
         if(inputArgs[0] == "use")
         {
@@ -430,7 +494,6 @@ int main(int argc, char* argv[])
     {
         close(i.first);
     }
-    close(serverfd);
     std::cout << "Thank you for using BeachC2!" << std::endl;
     return 0;
 }
