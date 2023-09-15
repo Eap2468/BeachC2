@@ -138,6 +138,10 @@ void signal_shell_handler(int code)
     }
     if (code == 2)
     {
+        return;
+    }
+    else if (code == 20)
+    {
         going = false;
         std::cout << std::endl;
     }
@@ -151,11 +155,6 @@ ssize_t fillBuffer(int fd, unsigned char* buffer, size_t *bufferPos)
 {
     ssize_t bufferSize = BUFFERSIZE - *bufferPos;
     ssize_t bytes_read = read(fd, buffer + *bufferPos, bufferSize);
-
-    if (bytes_read <= 0)
-    {
-        return -1;
-    }
 
     *bufferPos += bytes_read;
     return bytes_read;
@@ -200,8 +199,6 @@ int shell(int clientfd, IO io)
     fds[NETOUT].events = 0;
     fds[NETIN].events = POLLIN;
     fds[STDOUT].events = 0;
-
-    signal(SIGINT, signal_shell_handler);
 
     int pollCode, code;
     while(going)
@@ -351,6 +348,9 @@ int main(int argc, char* argv[])
         serverThread = std::thread(StartServer, &sessions, &serverfd);
     }
 
+    signal(SIGINT, signal_shell_handler);
+    signal(SIGTSTP, signal_shell_handler);
+
     int choice = 0, count = 0, code = 0;
     while(true)
     {
@@ -372,9 +372,18 @@ int main(int argc, char* argv[])
             serverThread.detach();
             break;
         }
+        if(inputStr == "clear")
+        {
+            printf("\e[1:1H\e[2J");
+            continue;
+        }
         if(inputStr == "sessions")
         {
             count = 0;
+            if(sessions.size() == 0)
+            {
+                infoMsg("No sessions available, go catch some shells!");
+            }
             for(auto &i : sessions)
             {
                 std::cout << count << ") " << i.second << std::endl;
