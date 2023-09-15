@@ -139,6 +139,7 @@ void signal_shell_handler(int code)
     if (code == 2)
     {
         going = false;
+        std::cout << std::endl;
     }
     else
     {
@@ -205,8 +206,8 @@ int shell(int clientfd, IO io)
     int pollCode, code;
     while(going)
     {
-        pollCode == poll(fds, 4, 10);
-        if(pollCode == -1)
+        pollCode = poll(fds, 4, 10);
+        if(pollCode == -1 && going)
         {
             errorMsg("Poll error");
             return 1;
