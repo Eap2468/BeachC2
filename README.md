@@ -15,6 +15,8 @@ kill: kills the given session number (usage: kill [SESSION NUMBER])
 
 listen: restarts the server on a different port (usage: listen [PORT NUMBER])
 
+rename: changes the display name of a given session (usage: rename [SESSION NUMBER] [NEW NAME][OPTIONAL]
+
 exit: safely closes the server
 
 help: shows the help menu
