@@ -19,7 +19,7 @@
 #define NETIN 2
 #define STDOUT 3
 
-#define DEBUG 1
+#define DEBUG 0
 
 bool going = false;
 bool serverListen = true;
