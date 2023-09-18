@@ -19,7 +19,7 @@
 #define NETIN 2
 #define STDOUT 3
 
-#define DEBUG 0
+#define DEBUG 1
 
 bool going = false;
 bool serverListen = true;
@@ -354,7 +354,7 @@ int main(int argc, char* argv[])
     int choice = 0, count = 0, code = 0;
     while(true)
     {
-        inputArgs.clear();
+        std::vector<std::string>().swap(inputArgs);
         prompt();
         std::getline(std::cin, inputStr);
         split(&inputArgs, inputStr);
@@ -472,7 +472,7 @@ int main(int argc, char* argv[])
                 }
 
                 choice = std::stoi(inputArgs[1]);
-                if (choice < 0 || choice > sessions.size())
+                if (choice < 0 || choice > sessions.size() - 1)
                 {
                     throw std::invalid_argument("Invalid session number");
                 }
@@ -486,7 +486,7 @@ int main(int argc, char* argv[])
             count = 0;
             for(auto &i : sessions)
             {
-                if(count == choice)
+                if (count == choice)
                 {
                     infoMsg("Killing connection");
                     close(i.first);
@@ -498,6 +498,67 @@ int main(int argc, char* argv[])
             }
         }
 
+        if (inputArgs[0] == "rename")
+        {
+            try
+            {
+                if (inputArgs.size() < 2)
+                {
+                    throw std::invalid_argument("No session number given");
+                }
+
+                choice = std::stoi(inputArgs[1]);
+                if (choice < 0 || choice > sessions.size() - 1)
+                {
+                    throw std::invalid_argument("Invalid session number");
+                }
+            } catch(...)
+            {
+                errorMsg("Please enter a valid session number");
+                continue;
+            }
+            
+            std::string nameStr = "";
+            if (inputArgs.size() > 2)
+            {
+                for(int i = 2; i < inputArgs.size(); i++)
+                {
+                    if (DEBUG)
+                    {
+                        debugMsg("Arg " + inputArgs.at(i));
+                    }
+
+                    if (i == inputArgs.size() - 1)
+                    {
+                        nameStr += inputArgs.at(i);
+                        continue;
+                    }
+                    
+                    nameStr += (inputArgs.at(i) + " ");
+                }
+                
+                if (DEBUG)
+                {
+                    debugMsg("nameStr " + nameStr);
+                }
+            }
+            else
+            {
+                std::cout << "New session name: ";
+                std::getline(std::cin, nameStr);
+            }
+
+            count = 0;
+            for(auto &i : sessions)
+            {
+                if (count == choice)
+                {
+                    sessions[i.first] = nameStr;
+                    successMsg("Session name changed!");
+                }
+                count++;
+            }
+        }
     }
 
     for(auto &i : sessions)
