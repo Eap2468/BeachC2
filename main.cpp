@@ -357,6 +357,12 @@ int main(int argc, char* argv[])
         std::vector<std::string>().swap(inputArgs);
         prompt();
         std::getline(std::cin, inputStr);
+
+        if(inputStr.length() == 0)
+        {
+            continue;
+        }
+
         split(&inputArgs, inputStr);
 
         if(DEBUG)
@@ -533,7 +539,7 @@ int main(int argc, char* argv[])
                         nameStr += inputArgs.at(i);
                         continue;
                     }
-                    
+
                     nameStr += (inputArgs.at(i) + " ");
                 }
                 
