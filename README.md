@@ -11,7 +11,7 @@ sessions: lists available sessions
 
 use: opens to the session listed (usage: use [SESSION NUMBER] and press ctrl-c to go back the menu)
 
-kill: kills the given session number (usage: kill [SESSION NUMBER])
+kill: kills the given session number(s) (usage: kill [SESSION NUMBER])
 
 listen: restarts the server on a different port (usage: listen [PORT NUMBER])
 
