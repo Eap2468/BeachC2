@@ -19,7 +19,7 @@
 #define NETIN 2
 #define STDOUT 3
 
-#define DEBUG 0
+#define DEBUG 1
 
 bool going = false;
 bool serverListen = true;
@@ -352,8 +352,13 @@ int main(int argc, char* argv[])
     signal(SIGTSTP, signal_shell_handler);
 
     int choice = 0, count = 0, code = 0;
+    std::vector<int> choiceVect = {};
+    bool found = false;
+    
     while(true)
     {
+        std::vector<int>().swap(choiceVect);
+
         std::vector<std::string>().swap(inputArgs);
         prompt();
         std::getline(std::cin, inputStr);
@@ -477,10 +482,108 @@ int main(int argc, char* argv[])
                     throw std::invalid_argument("No session number given");
                 }
 
-                choice = std::stoi(inputArgs[1]);
-                if (choice < 0 || choice > sessions.size() - 1)
+                if(inputArgs[1] == "*")
                 {
-                    throw std::invalid_argument("Invalid session number");
+                    std::cout << "Kill all connections? (y/n) ";
+                    getline(std::cin, inputStr);
+
+                    if(DEBUG)
+                    {
+                        debugMsg("inputStr: " + inputStr);
+                    }
+
+                    if(inputStr == "y" || inputStr == "Y")
+                    {
+                        infoMsg("Killing all connections");
+                        for(auto &i : sessions)
+                        {
+                            close(i.first);
+                        }
+                        sessions.clear();
+
+                        infoMsg("All connections killed");
+
+                        continue;
+                    }
+                }
+
+
+
+                for(int i = 1; i < inputArgs.size(); i++)
+                {
+                    found = false;
+                    choice = std::stoi(inputArgs[i]);
+                    if (choice < 0 || choice > sessions.size() - 1)
+                    {
+                        throw std::invalid_argument("Invalid session number");
+                    }
+
+                    for(int i : choiceVect)
+                    {
+                        if (i == choice)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if(!found)
+                    {
+                        choiceVect.push_back(choice);
+                    }
+                }
+
+                if (DEBUG)
+                {
+                    debugMsg("choiceVect");
+                    for(int i : choiceVect)
+                    {
+                        debugMsg(std::to_string(i));
+                    }
+                }
+
+                if (choiceVect.size() > 1)
+                {
+                    int temp = -1;
+
+                    for(int i = 0; i < choiceVect.size() - 1; i++)
+                    {
+                        for(int a = 1; a < choiceVect.size(); a++)
+                        {
+                            if(choiceVect[i] < choiceVect[a])
+                            {
+                                temp = choiceVect[i];
+                                choiceVect[i] = choiceVect[a];
+                                choiceVect[a] = temp;
+                            }
+                        }
+                    }
+
+                    if(DEBUG)
+                    {
+                        debugMsg("choiceVect");
+                        for(int i : choiceVect)
+                        {
+                            debugMsg(std::to_string(i));
+                        }
+                    }
+
+                    infoMsg("Killing connections");
+                    for(int i : choiceVect)
+                    {
+                        count = 0;
+                        for(auto &a : sessions)
+                        {
+                            if(count == i)
+                            {
+                                close(a.first);
+                                sessions.erase(a.first);
+                                break;
+                            }
+                            count++;
+                        }
+                    }
+                    continue;
                 }
 
             } catch(...)
